@@ -69,5 +69,7 @@ capabilities; o Terraform criptografa filas, exige TLS e separa permissões de p
 ## 11. Terraform: módulo + ambiente
 
 Módulos não têm provider nem backend, ambientes sim. Isso permite `terraform validate` no CI com
-`init -backend=false`. O SNS de alertas fica sem criptografia por limitação do CloudWatch com a
-chave gerenciada; a alternativa é uma CMK com política própria.
+`init -backend=false`. O SNS de alertas usa uma CMK própria (com rotação), porque o CloudWatch não
+publica em tópicos cifrados com a chave gerenciada `alias/aws/sns`; a política da chave concede
+`kms:Decrypt` e `kms:GenerateDataKey*` ao `cloudwatch.amazonaws.com`, restrito à conta. O Trivy
+(AWS-0095) pegou a versão anterior, sem criptografia, na primeira execução do CI.

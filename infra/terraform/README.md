@@ -31,8 +31,9 @@ terraform init -backend=false && terraform validate
 - Política da fila SQS nega qualquer acesso sem TLS.
 - Políticas IAM separadas para produtor (só envia) e worker (recebe, apaga, ajusta visibilidade).
 - Service Bus com TLS mínimo 1.2; `local_auth_enabled = false` desliga SAS e força Entra ID.
-- O tópico SNS de alertas fica sem criptografia de propósito: alarmes do CloudWatch não conseguem
-  publicar em tópicos cifrados com a chave gerenciada `alias/aws/sns`. Use uma CMK própria se precisar.
+- O tópico SNS de alertas usa uma CMK própria com rotação: alarmes do CloudWatch não conseguem
+  publicar em tópicos cifrados com a chave gerenciada `alias/aws/sns`, então a política da chave
+  concede `kms:Decrypt` e `kms:GenerateDataKey*` ao `cloudwatch.amazonaws.com` (restrito à conta).
 - O estado do Terraform contém segredos (connection string do Service Bus). Use backend remoto com
   criptografia e acesso restrito, e nunca versione `*.tfstate`, `*.tfvars` ou `backend.hcl`.
 

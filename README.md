@@ -236,7 +236,8 @@ permite `terraform validate` no CI com `init -backend=false`.
 | `azure_queue` | namespace + fila do Service Bus com dead-letter, duplicate detection, RBAC de produtor e worker, alerta de métrica |
 
 Os ambientes `envs/aws` e `envs/azure` instanciam os módulos e exportam as variáveis `TASKFORGE_*`
-correspondentes. Detalhes e a limitação do SNS sem criptografia (CloudWatch × chave gerenciada) em
+correspondentes. O tópico SNS de alertas usa uma CMK própria, porque o CloudWatch não publica em
+tópicos cifrados com a chave gerenciada `alias/aws/sns`. Detalhes em
 [`infra/terraform/README.md`](infra/terraform/README.md) e [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 ## DevOps

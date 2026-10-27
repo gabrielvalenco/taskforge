@@ -31,11 +31,55 @@ locals {
   }
 }
 
-# Atenção: alarmes do CloudWatch NÃO conseguem publicar em tópicos SNS criptografados com a
-# chave gerenciada `alias/aws/sns`. Se precisar de criptografia aqui, use uma CMK própria
-# com política que permita o serviço cloudwatch.amazonaws.com.
+data "aws_caller_identity" "current" {}
+
+# Alarmes do CloudWatch NÃO conseguem publicar em tópicos SNS criptografados com a chave
+# gerenciada `alias/aws/sns` (a política dela não admite o serviço). Por isso o tópico usa uma
+# CMK própria cuja política concede ao cloudwatch.amazonaws.com o acesso necessário.
+data "aws_iam_policy_document" "alerts_key" {
+  statement {
+    sid       = "AccountAdministration"
+    actions   = ["kms:*"]
+    resources = ["*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+
+  statement {
+    sid       = "AllowCloudWatchAlarms"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey*"]
+    resources = ["*"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["cloudwatch.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
+resource "aws_kms_key" "alerts" {
+  description         = "Criptografia do tópico SNS de alertas ${local.name}"
+  enable_key_rotation = true
+  policy              = data.aws_iam_policy_document.alerts_key.json
+}
+
+resource "aws_kms_alias" "alerts" {
+  name          = "alias/${local.name}-alerts"
+  target_key_id = aws_kms_key.alerts.key_id
+}
+
 resource "aws_sns_topic" "alerts" {
-  name = "${local.name}-alerts"
+  name              = "${local.name}-alerts"
+  kms_master_key_id = aws_kms_key.alerts.arn
 }
 
 resource "aws_sns_topic_subscription" "email" {
