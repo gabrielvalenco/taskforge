@@ -1,0 +1,7 @@
+# Copie para backend.hcl (ignorado pelo git) e ajuste. Uso:
+#   terraform init -backend-config=backend.hcl
+bucket       = "minha-empresa-terraform-state"
+key          = "taskforge/aws/dev/terraform.tfstate"
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true # lock nativo no S3 (Terraform >= 1.10). Antes disso: dynamodb_table = "..."

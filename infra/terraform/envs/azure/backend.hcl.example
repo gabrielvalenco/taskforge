@@ -1,0 +1,7 @@
+# Copie para backend.hcl (ignorado pelo git) e ajuste. Uso:
+#   terraform init -backend-config=backend.hcl
+resource_group_name  = "rg-terraform-state"
+storage_account_name = "stterraformstate12345"
+container_name       = "tfstate"
+key                  = "taskforge/azure/dev.tfstate"
+use_azuread_auth     = true

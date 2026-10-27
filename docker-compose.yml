@@ -1,0 +1,143 @@
+name: taskforge
+
+# Uso:
+#   docker compose up --build                       # Redis + worker + workers Celery
+#   docker compose --profile celery up --build      # + worker TaskForge delegando ao Celery
+#   docker compose --profile aws up --build         # + LocalStack (SQS) + worker consumindo SQS
+
+x-app: &app
+  build: .
+  image: taskforge:dev
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  volumes:
+    - taskforge-data:/data
+  environment: &app-env
+    TASKFORGE_QUEUE_BACKEND: redis
+    TASKFORGE_REDIS_URL: redis://redis:6379/0
+    TASKFORGE_LOG_JSON: "true"
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Worker TaskForge: consome a fila (Redis) e executa nos pools de threads/processos locais.
+  worker:
+    <<: *app
+    command: ["worker"]
+    environment:
+      <<: *app-env
+      TASKFORGE_IO_THREADS: "32"
+      TASKFORGE_CPU_PROCESSES: "2"
+
+  # Workers Celery especializados por tipo de carga (broker e backend de resultados: Redis).
+  celery-io:
+    <<: *app
+    entrypoint: ["celery"]
+    command:
+      - "-A"
+      - "taskforge.celery_app.worker:app"
+      - "worker"
+      - "-Q"
+      - "taskforge.io"
+      - "-P"
+      - "threads"
+      - "-c"
+      - "32"
+      - "--loglevel=INFO"
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A taskforge.celery_app.worker:app inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  celery-cpu:
+    <<: *app
+    entrypoint: ["celery"]
+    command:
+      - "-A"
+      - "taskforge.celery_app.worker:app"
+      - "worker"
+      - "-Q"
+      - "taskforge.cpu"
+      - "-P"
+      - "prefork"
+      - "-c"
+      - "2"
+      - "--max-tasks-per-child=100"
+      - "--loglevel=INFO"
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A taskforge.celery_app.worker:app inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Worker TaskForge que delega a execução aos workers Celery acima.
+  worker-celery:
+    <<: *app
+    profiles: ["celery"]
+    command: ["worker"]
+    environment:
+      <<: *app-env
+      TASKFORGE_EXECUTION_BACKEND: celery
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery-io:
+        condition: service_started
+      celery-cpu:
+        condition: service_started
+
+  # Emulação local de SQS, com as mesmas filas/DLQ que o Terraform cria na AWS.
+  localstack:
+    image: localstack/localstack:3
+    profiles: ["aws"]
+    environment:
+      SERVICES: sqs
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./infra/localstack/init.sh:/etc/localstack/init/ready.d/init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal sqs list-queues | grep -q taskforge-jobs"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker-aws:
+    <<: *app
+    profiles: ["aws"]
+    command: ["worker"]
+    environment:
+      TASKFORGE_QUEUE_BACKEND: sqs
+      TASKFORGE_SQS_QUEUE_URL: http://localstack:4566/000000000000/taskforge-jobs
+      TASKFORGE_SQS_DLQ_URL: http://localstack:4566/000000000000/taskforge-jobs-dlq
+      TASKFORGE_AWS_REGION: us-east-1
+      TASKFORGE_AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test # credenciais fictícias: só o LocalStack as aceita
+      AWS_SECRET_ACCESS_KEY: test
+      TASKFORGE_LOG_JSON: "true"
+    depends_on:
+      localstack:
+        condition: service_healthy
+
+volumes:
+  redis-data:
+  taskforge-data:
