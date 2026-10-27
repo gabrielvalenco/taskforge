@@ -354,10 +354,12 @@ dead-letter, idempotência, backoff determinístico e o Celery em modo eager. Re
 
 Dito com franqueza, para ninguém levar o projeto a produção por engano:
 
-- Os adaptadores de SQS, Service Bus e Redis foram testados com dublês, **não contra serviços reais**.
-  LocalStack está no compose, mas não faz parte da suíte.
-- O Terraform, o Dockerfile e o compose **não foram executados** durante o desenvolvimento
-  (`terraform validate`/`plan` e `docker build` ficam a cargo do CI e seu).
+- A suíte automatizada usa dublês (`fakeredis`, clientes simulados). Foram verificados manualmente,
+  com `docker compose`, o build da imagem, o smoke test (`--version`, `demo`), Redis real com worker
+  local, Celery com as filas `io` e `cpu` e SQS contra LocalStack (sucesso, erro permanente e
+  transitório até a DLQ). Isso não está automatizado e LocalStack não é a AWS.
+- **Não verificados:** Azure Service Bus contra um serviço real ou emulador, e o Terraform
+  (`validate`/`plan`/`apply`); ficam a cargo do CI e seu.
 - SQLite basta para um único nó. Com vários workers em máquinas diferentes, troque o repositório por
   um banco de rede (a porta `JobRepository` existe para isso).
 - Sem renovação de lease/visibilidade durante a execução do job (ver `visibility_timeout`).
